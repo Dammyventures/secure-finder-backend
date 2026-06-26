@@ -268,4 +268,6 @@ export class EmailService {
   }
 }
 
-export const emailService = new EmailService()
+// Create and export a singleton instance
+const emailServiceInstance = new EmailService()
+export { emailServiceInstance as emailService }

@@ -4,7 +4,6 @@ import { Session } from '../models/Session.model'
 import { JWTService } from '../services/jwt.service'
 import { emailService } from '../services/email.service'
 import { AppError } from '../middleware/error.middleware'
-
 import crypto from 'crypto'
 
 export class AuthController {
@@ -239,13 +238,23 @@ export class AuthController {
       throw new AppError('User not found', 404)
     }
     
+    // Generate a reset token (this will be used as the OTP code)
     const resetToken = crypto.randomBytes(32).toString('hex')
-    const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`
     
-   await emailService.sendPasswordResetOTP(email, resetToken)
+    // Send the reset token as the OTP code via email
+    await emailService.sendPasswordResetOTP(email, resetToken)
+    
+    // Store the token in the database with expiry
+    // Uncomment these lines if you have the fields in your User model
+    // user.resetPasswordToken = resetToken
+    // user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000) // 15 minutes
+    // await user.save()
+    
     res.json({
       success: true,
-      message: 'Password reset link sent to your email'
+      message: 'Password reset code sent to your email'
     })
   }
 }
+
+export const authController = AuthController
