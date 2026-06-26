@@ -10,7 +10,8 @@
     "build:watch": "tsc --watch",
     "test": "jest",
     "lint": "eslint src/**/*.ts",
-    "format": "prettier --write src/**/*.ts"
+    "format": "prettier --write src/**/*.ts",
+    "render-build": "yarn install && yarn build"
   },
   "dependencies": {
     "@types/bcryptjs": "^2.4.6",

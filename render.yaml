@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: secure-finder-backend
+    env: node
+    buildCommand: yarn install && yarn build
+    startCommand: yarn start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+    buildFilter:
+      paths:
+        - backend/src/**/*.ts
+        - backend/package.json
+        - backend/yarn.lock
+    rootDir: backend
