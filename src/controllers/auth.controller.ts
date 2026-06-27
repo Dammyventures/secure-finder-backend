@@ -238,10 +238,30 @@ export class AuthController {
       throw new AppError('User not found', 404)
     }
     
-    // Generate a reset token (this will be used as the OTP code)
+    // Generate a reset token
     const resetToken = crypto.randomBytes(32).toString('hex')
     
-    // Send the reset token as the OTP code via email
+    // Get the frontend URL based on environment
+    const getFrontendUrl = () => {
+      const environment = process.env.NODE_ENV || 'development'
+      
+      if (environment === 'production') {
+        return process.env.FRONTEND_URL_PROD || process.env.FRONTEND_URL || 'https://secure-finder.vercel.app'
+      }
+      
+      // Development fallback
+      return process.env.FRONTEND_URL_DEV || 'http://localhost:5173'
+    }
+    
+    const frontendUrl = getFrontendUrl()
+    const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`
+    
+    console.log(`📧 Sending password reset email to ${email}`)
+    console.log(`🔗 Reset link: ${resetLink}`)
+    console.log(`🌐 Frontend URL: ${frontendUrl}`)
+    console.log(`📡 Environment: ${process.env.NODE_ENV}`)
+    
+    // Send the reset token with the full reset link
     await emailService.sendPasswordResetOTP(email, resetToken)
     
     // Store the token in the database with expiry
@@ -252,7 +272,7 @@ export class AuthController {
     
     res.json({
       success: true,
-      message: 'Password reset code sent to your email'
+      message: 'Password reset link sent to your email'
     })
   }
 }
