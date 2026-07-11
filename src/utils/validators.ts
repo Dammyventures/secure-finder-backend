@@ -1,5 +1,7 @@
 import { body, validationResult, ValidationChain } from 'express-validator'
 
+// ===================== REGISTRATION VALIDATION =====================
+// Removed identity fields – now only basic info
 export const registerValidation = [
   body('fullName')
     .trim()
@@ -11,7 +13,9 @@ export const registerValidation = [
     .isEmail().withMessage('Invalid email format'),
   body('phone')
     .trim()
-    .notEmpty().withMessage('Phone number is required'),
+    .notEmpty().withMessage('Phone number is required')
+    .matches(/^(080|081|090|091|070)\d{8}$/)
+    .withMessage('Enter a valid Nigerian phone number (e.g., 08012345678)'),
   body('password')
     .isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
     .matches(/[A-Z]/).withMessage('Password must contain uppercase letter')
@@ -20,6 +24,7 @@ export const registerValidation = [
     .matches(/[!@#$%^&*(),.?":{}|<>]/).withMessage('Password must contain special character')
 ]
 
+// ===================== LOGIN VALIDATION =====================
 export const loginValidation = [
   body('email')
     .trim()
@@ -29,6 +34,7 @@ export const loginValidation = [
     .notEmpty().withMessage('Password is required')
 ]
 
+// ===================== CHANGE PASSWORD VALIDATION =====================
 export const changePasswordValidation = [
   body('currentPassword')
     .notEmpty().withMessage('Current password is required'),
@@ -40,6 +46,7 @@ export const changePasswordValidation = [
     .matches(/[!@#$%^&*(),.?":{}|<>]/).withMessage('Password must contain special character')
 ]
 
+// ===================== CREATE ITEM VALIDATION =====================
 export const createItemValidation = [
   body('title')
     .trim()
@@ -64,21 +71,22 @@ export const createItemValidation = [
     .isISO8601().withMessage('Invalid date format')
 ]
 
+// ===================== GENERIC VALIDATE MIDDLEWARE =====================
 export const validate = (validations: ValidationChain[]) => {
   return async (req: any, res: any, next: any) => {
     await Promise.all(validations.map(validation => validation.run(req)))
-    
+
     const errors = validationResult(req)
     if (errors.isEmpty()) {
       return next()
     }
-    
+
     const formattedErrors = errors.array().map((err: any) => ({
       field: err.path || err.param,
       message: err.msg,
       value: err.value
     }))
-    
+
     res.status(400).json({
       success: false,
       errors: formattedErrors

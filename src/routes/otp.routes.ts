@@ -7,7 +7,8 @@ import { rateLimiter } from '../middleware/rateLimit.middleware'
 const router = Router()
 
 // Send OTP
-router.post('/send',
+router.post(
+  '/send',
   rateLimiter.auth,
   validate([
     body('email').isEmail().withMessage('Valid email required'),
@@ -17,7 +18,8 @@ router.post('/send',
 )
 
 // Verify OTP
-router.post('/verify',
+router.post(
+  '/verify',
   rateLimiter.strict,
   validate([
     body('email').isEmail().withMessage('Valid email required'),
@@ -28,7 +30,8 @@ router.post('/verify',
 )
 
 // Resend OTP
-router.post('/resend',
+router.post(
+  '/resend',
   rateLimiter.auth,
   validate([
     body('email').isEmail().withMessage('Valid email required'),

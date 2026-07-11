@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
 import dotenv from 'dotenv'
+import verificationRoutes from './routes/verification.routes'
 import { createServer } from 'http'
 import { initSocket } from './socket'
 import { connectDatabase } from './config/database'
@@ -65,6 +66,7 @@ app.use(helmet({
   crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }
 }))
 
+app.use('/api/auth/verification', verificationRoutes)
 // CORS middleware
 app.use(cors(corsOptions))
 

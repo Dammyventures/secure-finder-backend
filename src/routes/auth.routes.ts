@@ -1,23 +1,19 @@
 import { Router } from 'express'
-import { AuthController } from '../controllers/auth.controller'
+import { authController } from '../controllers/auth.controller'
 import { authenticate } from '../middleware/auth.middleware'
 import { validate } from '../middleware/validation.middleware'
 import { rateLimiter } from '../middleware/rateLimit.middleware'
-import { 
-  registerValidation, 
-  loginValidation,
-  changePasswordValidation 
-} from '../utils/validators'
+import { registerValidation, loginValidation, changePasswordValidation } from '../utils/validators'
 
 const router = Router()
 
-router.post('/register', rateLimiter.auth, validate(registerValidation), AuthController.register)
-router.post('/login', rateLimiter.auth, validate(loginValidation), AuthController.login)
-router.post('/logout', authenticate, AuthController.logout)
-router.post('/refresh-token', AuthController.refreshToken)
-router.get('/profile', authenticate, AuthController.getProfile)
-router.put('/profile', authenticate, AuthController.updateProfile)
-router.post('/change-password', authenticate, validate(changePasswordValidation), AuthController.changePassword)
-router.post('/forgot-password', AuthController.forgotPassword)
+router.post('/register', rateLimiter.auth, validate(registerValidation), authController.register)
+router.post('/login', rateLimiter.auth, validate(loginValidation), authController.login)
+router.post('/logout', authenticate, authController.logout)
+router.post('/refresh-token', authController.refreshToken)
+router.get('/profile', authenticate, authController.getProfile)
+router.put('/profile', authenticate, authController.updateProfile)
+router.post('/change-password', authenticate, validate(changePasswordValidation), authController.changePassword)
+router.post('/forgot-password', authController.forgotPassword)
 
 export default router

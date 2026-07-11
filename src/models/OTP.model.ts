@@ -44,7 +44,7 @@ const OTPSchema = new Schema<IOTP>({
   timestamps: true
 })
 
-// Index for cleanup
+// Index for automatic cleanup
 OTPSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 })
 
 export const OTP = mongoose.model<IOTP>('OTP', OTPSchema)

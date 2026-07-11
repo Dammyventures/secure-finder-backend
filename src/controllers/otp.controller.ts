@@ -7,7 +7,7 @@ import { logger } from '../utils/logger'
 import crypto from 'crypto'
 
 export class OTPController {
-  // Generate and send OTP
+  // ===================== SEND OTP =====================
   static async sendOTP(req: Request, res: Response) {
     const { email, type = 'verification' } = req.body
 
@@ -15,29 +15,36 @@ export class OTPController {
       throw new AppError('Email is required', 400)
     }
 
-    // Check if user exists for verification type
-    if (type === 'verification') {
-      const user = await User.findOne({ email })
-      if (user && user.isEmailVerified) {
-        throw new AppError('Email already verified', 400)
-      }
+    // Check user exists
+    const user = await User.findOne({ email })
+    if (!user) {
+      throw new AppError('User not found', 404)
     }
 
-    // Generate 6-digit OTP
+    // If verification type, ensure not already verified
+    if (type === 'verification' && user.isEmailVerified) {
+      throw new AppError('Email already verified', 400)
+    }
+
+    // Delete old unused OTPs
+    await OTP.deleteMany({ email, type, verified: false })
+
+    // Generate new 6-digit code
     const code = crypto.randomInt(100000, 999999).toString()
 
-    // Save OTP to database
-    await OTP.create({
+    // Save OTP
+    const otp = new OTP({
       email,
       code,
       type,
-      expiresAt: new Date(Date.now() + 15 * 60 * 1000) // 15 minutes
+      expiresAt: new Date(Date.now() + 15 * 60 * 1000)
     })
+    await otp.save()
 
     // Send email
     try {
       await emailService.sendVerificationOTP(email, code)
-      logger.info(`OTP sent to ${email}`)
+      logger.info(`📧 OTP sent to ${email}`)
     } catch (error) {
       logger.error('Failed to send OTP email:', error)
       throw new AppError('Failed to send verification email', 500)
@@ -49,7 +56,7 @@ export class OTPController {
     })
   }
 
-  // Verify OTP
+  // ===================== VERIFY OTP =====================
   static async verifyOTP(req: Request, res: Response) {
     const { email, code, type = 'verification' } = req.body
 
@@ -57,7 +64,7 @@ export class OTPController {
       throw new AppError('Email and code are required', 400)
     }
 
-    // Find valid OTP
+    // Find valid OTP (not verified, not expired)
     const otpRecord = await OTP.findOne({
       email,
       code,
@@ -67,7 +74,7 @@ export class OTPController {
     })
 
     if (!otpRecord) {
-      // Check if OTP exists but expired
+      // Check if expired
       const expiredOTP = await OTP.findOne({
         email,
         code,
@@ -83,7 +90,7 @@ export class OTPController {
       throw new AppError('Invalid verification code', 400)
     }
 
-    // Check attempts
+    // Check attempts (max 5)
     if (otpRecord.attempts >= 5) {
       throw new AppError('Too many attempts. Please request a new code.', 400)
     }
@@ -92,15 +99,17 @@ export class OTPController {
     otpRecord.verified = true
     await otpRecord.save()
 
-    // Update user verification status
+    // Update user status
     if (type === 'verification') {
       const user = await User.findOne({ email })
       if (user) {
         user.isEmailVerified = true
-        user.identityVerified = true
-        user.accountStatus = 'active'
-        user.verificationScore = 50
+        if (user.accountStatus === 'pending_verification') {
+          user.accountStatus = 'active'
+        }
+        user.verificationScore = Math.min(user.verificationScore + 20, 100)
         await user.save()
+        logger.info(`✅ Email verified for ${email}`)
       }
     }
 
@@ -113,7 +122,7 @@ export class OTPController {
     })
   }
 
-  // Resend OTP
+  // ===================== RESEND OTP =====================
   static async resendOTP(req: Request, res: Response) {
     const { email, type = 'verification' } = req.body
 
@@ -121,33 +130,32 @@ export class OTPController {
       throw new AppError('Email is required', 400)
     }
 
-    // Check if user exists
     const user = await User.findOne({ email })
-    if (type === 'verification' && user && user.isEmailVerified) {
+    if (!user) {
+      throw new AppError('User not found', 404)
+    }
+
+    if (type === 'verification' && user.isEmailVerified) {
       throw new AppError('Email already verified', 400)
     }
 
     // Delete old OTPs
-    await OTP.deleteMany({
-      email,
-      type,
-      verified: false
-    })
+    await OTP.deleteMany({ email, type, verified: false })
 
-    // Generate new OTP
+    // Generate new code
     const code = crypto.randomInt(100000, 999999).toString()
 
-    await OTP.create({
+    const otp = new OTP({
       email,
       code,
       type,
       expiresAt: new Date(Date.now() + 15 * 60 * 1000)
     })
+    await otp.save()
 
-    // Send email
     try {
       await emailService.sendVerificationOTP(email, code)
-      logger.info(`OTP resent to ${email}`)
+      logger.info(`📧 OTP resent to ${email}`)
     } catch (error) {
       logger.error('Failed to resend OTP:', error)
       throw new AppError('Failed to send verification email', 500)
