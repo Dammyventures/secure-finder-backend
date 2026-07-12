@@ -389,30 +389,46 @@ export class AuthController {
     console.log('📧 Forgot password request for:', req.body.email)
     const { email } = req.body
     
+    if (!email) {
+      throw new AppError('Email is required', 400)
+    }
+    
     try {
       const user = await User.findOne({ email: email.toLowerCase().trim() })
+      
+      // Always return success message for security (don't reveal if user exists)
       if (!user) {
         console.warn('⚠️ User not found:', email)
-        // Don't reveal that user doesn't exist for security
         return res.json({
           success: true,
-          message: 'If an account exists, a password reset link has been sent to your email'
+          message: 'If an account exists with this email, a password reset link has been sent'
         })
       }
       
+      // User exists - generate reset token and send email
       const resetToken = crypto.randomBytes(32).toString('hex')
-      const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`
+      const resetLink = `${process.env.FRONTEND_URL || 'https://secure-finder.vercel.app'}/reset-password?token=${resetToken}`
       
+      // Save reset token to user (you may want to add this to your User model)
+      // user.resetPasswordToken = resetToken;
+      // user.resetPasswordExpires = new Date(Date.now() + 3600000); // 1 hour
+      // await user.save();
+      
+      // Send email with reset link
       await emailService.sendPasswordResetOTP(email, resetToken)
       console.log('✅ Password reset email sent to:', email)
       
-      res.json({
+      return res.json({
         success: true,
-        message: 'Password reset link sent to your email'
+        message: 'If an account exists with this email, a password reset link has been sent'
       })
     } catch (error) {
       console.error('❌ Forgot password error:', error)
-      throw new AppError('Failed to send password reset email', 500)
+      // Still return success for security
+      return res.json({
+        success: true,
+        message: 'If an account exists with this email, a password reset link has been sent'
+      })
     }
   }
 }

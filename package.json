@@ -1,18 +1,15 @@
 {
-  "name": "secure-finder-backend",
-  "version": "1.0.0",
-  "description": "Secure Finder Lost & Found Platform Backend",
-  "main": "dist/app.js",
   "scripts": {
     "start": "node dist/app.js",
-    "dev": "nodemon",
-    "build": "tsc --project tsconfig.json",
+    "dev": "nodemon src/app.ts",
+    "build": "tsc",
     "build:watch": "tsc --watch",
+    "render-build": "npm install && npm run build",
     "test": "jest",
     "lint": "eslint src/**/*.ts",
-    "format": "prettier --write src/**/*.ts",
-    "render-build": "yarn install --frozen-lockfile && yarn build"
+    "format": "prettier --write src/**/*.ts"
   },
+
   "dependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.5",

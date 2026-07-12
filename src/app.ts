@@ -18,6 +18,7 @@ import claimRoutes from './routes/claim.routes'
 import notificationRoutes from './routes/notification.routes'
 import userRoutes from './routes/user.routes'
 import adminRoutes from './routes/admin.routes'
+import mongoose from 'mongoose'
 
 dotenv.config()
 
@@ -26,10 +27,39 @@ const server = createServer(app)
 
 const io = initSocket(server)
 
-connectDatabase()
-connectRedis()
+// ============================================
+// DATABASE CONNECTIONS WITH ERROR HANDLING
+// ============================================
 
-// CORS Configuration - Allow both localhost and production domains
+// Connect to MongoDB with error handling
+const connectDB = async () => {
+  try {
+    await connectDatabase()
+    logger.info('✅ MongoDB connected successfully')
+  } catch (error) {
+    logger.error('❌ MongoDB connection failed:', error)
+    // Don't exit - let the app try to reconnect
+  }
+}
+
+// Connect to Redis with error handling (optional)
+const connectRedisClient = async () => {
+  try {
+    await connectRedis()
+    // The function handles its own logging
+  } catch (error) {
+    logger.warn('⚠️ Redis connection failed - running without Redis:', error)
+  }
+}
+
+// Initialize connections
+connectDB()
+connectRedisClient()
+
+// ============================================
+// CORS CONFIGURATION - FIXED
+// ============================================
+
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
@@ -43,10 +73,17 @@ const allowedOrigins = [
 const corsOptions = {
   origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
     // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true)
+    if (!origin) {
+      return callback(null, true)
+    }
+    
+    // In development, allow all
+    if (process.env.NODE_ENV === 'development') {
+      return callback(null, true)
+    }
     
     // Check if origin is allowed
-    if (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
+    if (allowedOrigins.includes(origin)) {
       callback(null, true)
     } else {
       logger.warn(`❌ CORS blocked origin: ${origin}`)
@@ -60,14 +97,17 @@ const corsOptions = {
   optionsSuccessStatus: 200
 }
 
+// ============================================
+// MIDDLEWARE - ORDER MATTERS!
+// ============================================
+
 // Security middleware
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
   crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }
 }))
 
-app.use('/api/auth/verification', verificationRoutes)
-// CORS middleware
+// CORS middleware - MUST come before routes
 app.use(cors(corsOptions))
 
 // Body parsing middleware
@@ -80,18 +120,26 @@ app.use((req, res, next) => {
   next()
 })
 
-// Health check endpoint
+// ============================================
+// HEALTH CHECK ENDPOINT - Enhanced
+// ============================================
+
 app.get('/health', (_req, res) => {
   res.json({ 
     status: 'OK', 
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    environment: process.env.NODE_ENV,
-    frontendUrl: process.env.FRONTEND_URL || 'https://secure-finder.vercel.app'
+    environment: process.env.NODE_ENV || 'development',
+    frontendUrl: process.env.FRONTEND_URL || 'https://secure-finder.vercel.app',
+    backendUrl: process.env.BACKEND_URL || 'https://secure-finder-backend.onrender.com',
+    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
   })
 })
 
-// Root endpoint
+// ============================================
+// ROOT ENDPOINT
+// ============================================
+
 app.get('/', (_req, res) => {
   res.json({
     message: 'Secure Finder Backend API',
@@ -106,23 +154,51 @@ app.get('/', (_req, res) => {
       claims: '/api/claims',
       notifications: '/api/notifications',
       otp: '/api/otp',
-      admin: '/api/admin'
+      admin: '/api/admin',
+      verification: '/api/auth/verification'
+    },
+    status: {
+      mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
     }
   })
 })
 
-// Routes with rate limiting
-app.use('/api/auth', rateLimiter.auth)
-app.use('/api/items', rateLimiter.api)
-app.use('/api/otp', otpRoutes)
-app.use('/api/auth', authRoutes)
-app.use('/api/items', itemRoutes)
-app.use('/api/claims', claimRoutes)
-app.use('/api/notifications', notificationRoutes)
-app.use('/api/users', userRoutes)
-app.use('/api/admin', adminRoutes)
+// ============================================
+// TEST ENDPOINT - For debugging
+// ============================================
 
-// Socket.IO connection handling
+app.get('/test', (_req, res) => {
+  res.json({
+    status: 'OK',
+    message: 'Server is reachable',
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString(),
+    cors: {
+      allowedOrigins: allowedOrigins
+    }
+  })
+})
+
+// ============================================
+// ROUTES
+// ============================================
+
+// Public routes (no authentication required)
+app.use('/api/auth/verification', verificationRoutes)
+app.use('/api/otp', otpRoutes)
+
+// Protected routes with rate limiting
+app.use('/api/auth', rateLimiter.auth, authRoutes)
+app.use('/api/items', rateLimiter.api, itemRoutes)
+app.use('/api/claims', rateLimiter.api, claimRoutes)
+app.use('/api/notifications', rateLimiter.api, notificationRoutes)
+app.use('/api/users', rateLimiter.api, userRoutes)
+app.use('/api/admin', rateLimiter.api, adminRoutes)
+
+// ============================================
+// SOCKET.IO HANDLING
+// ============================================
+
 io.on('connection', (socket) => {
   logger.info(`User connected: ${socket.id}`)
   
@@ -136,7 +212,10 @@ io.on('connection', (socket) => {
   })
 })
 
-// 404 handler for undefined routes
+// ============================================
+// 404 HANDLER
+// ============================================
+
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -144,8 +223,15 @@ app.use((req, res) => {
   })
 })
 
-// Error handling middleware
+// ============================================
+// ERROR HANDLING MIDDLEWARE
+// ============================================
+
 app.use(errorHandler)
+
+// ============================================
+// SERVER STARTUP
+// ============================================
 
 const PORT = process.env.PORT || 5000
 const serverInstance = server.listen(PORT, () => {
@@ -154,15 +240,49 @@ const serverInstance = server.listen(PORT, () => {
   logger.info(`🔗 Frontend URL: ${process.env.FRONTEND_URL || 'https://secure-finder.vercel.app'}`)
   logger.info(`🔗 Backend URL: ${process.env.BACKEND_URL || `http://localhost:${PORT}`}`)
   logger.info(`✅ CORS enabled for origins:`, allowedOrigins)
+  logger.info(`📊 Health check: http://localhost:${PORT}/health`)
+  logger.info(`🧪 Test endpoint: http://localhost:${PORT}/test`)
 })
 
-// Graceful shutdown
+// ============================================
+// GRACEFUL SHUTDOWN
+// ============================================
+
 process.on('SIGTERM', () => {
   logger.info('SIGTERM signal received: closing HTTP server')
   serverInstance.close(() => {
     logger.info('HTTP server closed')
+    // Close database connections
+    mongoose.connection.close().then(() => {
+      logger.info('MongoDB connection closed')
+      process.exit(0)
+    }).catch((err) => {
+      logger.error('Error closing MongoDB connection:', err)
+      process.exit(1)
+    })
+  })
+})
+
+process.on('SIGINT', () => {
+  logger.info('SIGINT signal received: closing HTTP server')
+  serverInstance.close(() => {
+    logger.info('HTTP server closed')
     process.exit(0)
   })
+})
+
+// ============================================
+// UNHANDLED EXCEPTION HANDLING
+// ============================================
+
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception:', error)
+  // Keep the process running
+})
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection at:', promise, 'reason:', reason)
+  // Keep the process running
 })
 
 export default app
