@@ -12,6 +12,14 @@ export class EmailService {
   private transporter: nodemailer.Transporter
 
   constructor() {
+    // Log configuration (hide sensitive parts)
+    console.log('📧 Email Service initialized with:')
+    console.log(`  Host: ${process.env.SMTP_HOST || 'smtp.gmail.com'}`)
+    console.log(`  Port: ${process.env.SMTP_PORT || '587'}`)
+    console.log(`  User: ${process.env.SMTP_USER ? '✅ Set' : '❌ Missing'}`)
+    console.log(`  Pass: ${process.env.SMTP_PASS ? '✅ Set' : '❌ Missing'}`)
+    console.log(`  From: ${process.env.EMAIL_FROM || 'noreply@securefinder.com'}`)
+
     this.transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST || 'smtp.gmail.com',
       port: parseInt(process.env.SMTP_PORT || '587'),
@@ -19,7 +27,11 @@ export class EmailService {
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS
-      }
+      },
+      // Add timeout and debug options
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 10000,
     })
   }
 
@@ -31,7 +43,14 @@ export class EmailService {
       })
       logger.info(`✅ Email sent to ${options.to}`)
       return result
-    } catch (error) {
+    } catch (error: any) {
+      // Log detailed error
+      console.error('❌ Email sending failed:', error)
+      console.error('Error name:', error.name)
+      console.error('Error message:', error.message)
+      if (error.response) {
+        console.error('Nodemailer response:', error.response)
+      }
       logger.error('❌ Email sending failed:', error)
       throw error
     }

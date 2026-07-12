@@ -3,8 +3,25 @@ import { OTPController } from '../controllers/otp.controller'
 import { validate } from '../middleware/validation.middleware'
 import { body } from 'express-validator'
 import { rateLimiter } from '../middleware/rateLimit.middleware'
+import { emailService } from '../services/email.service'
 
 const router = Router()
+
+// ✅ Test endpoint – to debug email service independently
+router.get('/test-email', async (req, res) => {
+  try {
+    await emailService.sendVerificationOTP('your-test-email@gmail.com', '123456')
+    res.json({ success: true, message: 'Test email sent successfully' })
+  } catch (error: any) {
+    console.error('Test email error:', error)
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      stack: error.stack,
+      response: error.response?.data || error.response?.message
+    })
+  }
+})
 
 // Send OTP
 router.post(

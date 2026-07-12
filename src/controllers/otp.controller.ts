@@ -41,13 +41,22 @@ export class OTPController {
     })
     await otp.save()
 
+    // Log code for debugging (visible in Render logs)
+    console.log(`🔑 OTP for ${email} is: ${code}`)
+
     // Send email
     try {
       await emailService.sendVerificationOTP(email, code)
       logger.info(`📧 OTP sent to ${email}`)
-    } catch (error) {
+    } catch (error: any) {
+      console.error('❌ Email send failed with error:', error)
+      console.error('Error name:', error.name)
+      console.error('Error message:', error.message)
+      if (error.response) {
+        console.error('Nodemailer response:', error.response)
+      }
       logger.error('Failed to send OTP email:', error)
-      throw new AppError('Failed to send verification email', 500)
+      throw new AppError(`Failed to send verification email: ${error.message}`, 500)
     }
 
     res.json({
@@ -153,12 +162,21 @@ export class OTPController {
     })
     await otp.save()
 
+    console.log(`🔑 Resend OTP for ${email}: ${code}`)
+
     try {
       await emailService.sendVerificationOTP(email, code)
       logger.info(`📧 OTP resent to ${email}`)
-    } catch (error) {
+    } catch (error: any) {
+      console.error('❌ Resend email failed:', error)
+      console.error('Error details:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+        response: error.response?.data || error.response?.message
+      })
       logger.error('Failed to resend OTP:', error)
-      throw new AppError('Failed to send verification email', 500)
+      throw new AppError(`Failed to resend verification email: ${error.message}`, 500)
     }
 
     res.json({
