@@ -127,6 +127,7 @@ export class AuthController {
       const otpCode = crypto.randomInt(100000, 999999).toString()
       console.log(`📧 Generated OTP: ${otpCode} for ${user.email}`)
 
+      // Save OTP to database
       const otp = new OTP({
         email: user.email,
         code: otpCode,
@@ -136,7 +137,10 @@ export class AuthController {
       await withTimeout(otp.save(), 5000)
       console.log('✅ OTP saved to DB')
 
-      // Try sending email with 3‑second timeout
+      // Log OTP to console as fallback (for debugging)
+      console.log(`🔑 OTP for ${user.email} is: ${otpCode}`)
+
+      // Send email with 3‑second timeout
       await withTimeout(
         emailService.sendVerificationOTP(user.email, otpCode),
         3000
@@ -146,6 +150,12 @@ export class AuthController {
       otpSent = true
     } catch (error) {
       console.error('❌ OTP failed (registration continues):', error)
+      // Log full error details
+      if (error instanceof Error) {
+        console.error('Error name:', error.name)
+        console.error('Error message:', error.message)
+        console.error('Error stack:', error.stack)
+      }
       logger.error('Failed to send OTP:', error)
       // We do NOT throw – registration still succeeds
     }
@@ -458,7 +468,7 @@ export class AuthController {
       const resetToken = crypto.randomBytes(32).toString('hex')
       const resetLink = `${process.env.FRONTEND_URL || 'https://secure-finder.vercel.app'}/reset-password?token=${resetToken}`
 
-      // Send email with timeout protection
+      // Send email with timeout
       try {
         await withTimeout(
           emailService.sendPasswordResetLink(email, resetLink),
