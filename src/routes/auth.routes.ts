@@ -15,7 +15,7 @@ router.get('/test', (req, res) => {
 // ✅ DEBUG: Bypass all middleware
 router.post('/register-debug', authController.register)
 
-router.post('/register', rateLimiter.auth, validate(registerValidation), authController.register)
+router.post('/register',  authController.register)
 router.post('/login', rateLimiter.auth, validate(loginValidation), authController.login)
 router.post('/logout', authenticate, authController.logout)
 router.post('/refresh-token', authController.refreshToken)

@@ -182,7 +182,7 @@ app.get('/test', (_req, res) => {
 app.use('/api/auth/verification', verificationRoutes)
 app.use('/api/otp', otpRoutes)
 
-app.use('/api/auth', rateLimiter.auth, authRoutes)
+app.use('/api/auth', authRoutes)
 app.use('/api/items', rateLimiter.api, itemRoutes)
 app.use('/api/claims', rateLimiter.api, claimRoutes)
 app.use('/api/notifications', rateLimiter.api, notificationRoutes)
