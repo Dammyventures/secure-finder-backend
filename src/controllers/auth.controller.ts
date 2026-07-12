@@ -9,7 +9,7 @@ import { logger } from '../utils/logger'
 import crypto from 'crypto'
 
 // ============================================
-// 🔧 Helper: Promise timeout (3 seconds)
+// 🔧 Helper: Promise timeout (3 seconds for email)
 // ============================================
 const withTimeout = <T>(promise: Promise<T>, ms: number = 3000): Promise<T> => {
   return Promise.race([
@@ -22,7 +22,7 @@ const withTimeout = <T>(promise: Promise<T>, ms: number = 3000): Promise<T> => {
 
 export class AuthController {
   // ============================================
-  // 📝 REGISTER - with OTP and 3-second timeout
+  // 📝 REGISTER – with OTP and timeout protection
   // ============================================
   static async register(req: Request, res: Response) {
     const startTime = Date.now()
@@ -31,7 +31,7 @@ export class AuthController {
 
     const { fullName, email, phone, password } = req.body
 
-    // ✅ Validate required fields
+    // 1️⃣ Validate required fields
     const missingFields: string[] = []
     if (!fullName) missingFields.push('fullName')
     if (!email) missingFields.push('email')
@@ -43,11 +43,10 @@ export class AuthController {
       throw new AppError(`Missing required fields: ${missingFields.join(', ')}`, 400)
     }
 
-    // 1️⃣ Check if user exists (with timeout)
+    // 2️⃣ Check if user exists (with timeout)
     console.log('🔍 Step 1: Checking existing user...')
-    let existingUser
     try {
-      existingUser = await withTimeout(User.findOne({ email }), 5000)
+      const existingUser = await withTimeout(User.findOne({ email }), 5000)
       if (existingUser) {
         console.warn('⚠️ User already exists:', email)
         throw new AppError('User with this email already exists. Please login instead.', 409)
@@ -59,7 +58,7 @@ export class AuthController {
       throw new AppError('Database error. Please try again.', 500)
     }
 
-    // 2️⃣ Create and save user (with timeout)
+    // 3️⃣ Create and save user (with timeout)
     console.log('🔍 Step 2: Creating user...')
     let user
     try {
@@ -76,7 +75,7 @@ export class AuthController {
       })
 
       await withTimeout(user.save(), 10000) // 10 seconds for save
-      console.log(`✅ Step 2: User saved (${Date.now() - startTime}ms)`);
+      console.log(`✅ Step 2: User saved (${Date.now() - startTime}ms)`)
       logger.info(`✅ User registered: ${user.email} (ID: ${user._id})`)
     } catch (error: any) {
       console.error('❌ Error saving user:', error)
@@ -86,7 +85,7 @@ export class AuthController {
       throw new AppError('Failed to create account. Please try again.', 500)
     }
 
-    // 3️⃣ Generate tokens (synchronous – should be fast)
+    // 4️⃣ Generate tokens (synchronous)
     console.log('🔍 Step 3: Generating tokens...')
     let accessToken: string, refreshToken: string
     try {
@@ -99,7 +98,7 @@ export class AuthController {
       throw new AppError('Failed to generate authentication tokens', 500)
     }
 
-    // 4️⃣ Create session (with timeout)
+    // 5️⃣ Create session (with timeout)
     console.log('🔍 Step 4: Creating session...')
     try {
       const session = new Session({
@@ -121,7 +120,7 @@ export class AuthController {
       // Continue even if session fails – user can still login
     }
 
-    // 5️⃣ Send OTP (with 3-second timeout, non-blocking)
+    // 6️⃣ Send OTP (with 3‑second timeout, non‑blocking)
     console.log('🔍 Step 5: Sending OTP...')
     let otpSent = false
     try {
@@ -137,7 +136,7 @@ export class AuthController {
       await withTimeout(otp.save(), 5000)
       console.log('✅ OTP saved to DB')
 
-      // Try sending email with 3-second timeout
+      // Try sending email with 3‑second timeout
       await withTimeout(
         emailService.sendVerificationOTP(user.email, otpCode),
         3000
@@ -151,7 +150,7 @@ export class AuthController {
       // We do NOT throw – registration still succeeds
     }
 
-    // 6️⃣ Send success response
+    // 7️⃣ Send success response
     const totalTime = Date.now() - startTime
     console.log(`✅ Registration complete for ${user.email} (${totalTime}ms)`)
     console.log(`ℹ️ OTP sent: ${otpSent ? '✅' : '❌'}`)
@@ -179,7 +178,7 @@ export class AuthController {
   }
 
   // ============================================
-  // 🔐 LOGIN (unchanged from your original)
+  // 🔐 LOGIN
   // ============================================
   static async login(req: Request, res: Response) {
     console.log('🔐 ===== LOGIN REQUEST =====')
@@ -459,6 +458,7 @@ export class AuthController {
       const resetToken = crypto.randomBytes(32).toString('hex')
       const resetLink = `${process.env.FRONTEND_URL || 'https://secure-finder.vercel.app'}/reset-password?token=${resetToken}`
 
+      // Send email with timeout protection
       try {
         await withTimeout(
           emailService.sendPasswordResetLink(email, resetLink),
@@ -467,6 +467,7 @@ export class AuthController {
         console.log('✅ Password reset email sent to:', email)
       } catch (emailError) {
         console.error('❌ Failed to send password reset email:', emailError)
+        // Still return success to avoid email enumeration
       }
 
       return res.json({
