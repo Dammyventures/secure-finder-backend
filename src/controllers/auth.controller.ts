@@ -10,50 +10,100 @@ import crypto from 'crypto'
 
 export class AuthController {
   static async register(req: Request, res: Response) {
+    console.log('📝 ===== REGISTER REQUEST =====')
+    console.log('📝 Request body:', req.body)
+    
     const { fullName, email, phone, password } = req.body
     
-    if (!fullName || !email || !phone || !password) {
-      throw new AppError('All fields are required', 400)
+    // ✅ Validate required fields with detailed errors
+    const missingFields: string[] = []
+    if (!fullName) missingFields.push('fullName')
+    if (!email) missingFields.push('email')
+    if (!phone) missingFields.push('phone')
+    if (!password) missingFields.push('password')
+    
+    if (missingFields.length > 0) {
+      console.error('❌ Missing required fields:', missingFields)
+      throw new AppError(`Missing required fields: ${missingFields.join(', ')}`, 400)
     }
     
-    const existingUser = await User.findOne({ email })
-    if (existingUser) {
-      throw new AppError('User already exists', 409)
+    // ✅ Check if user exists
+    try {
+      const existingUser = await User.findOne({ email })
+      if (existingUser) {
+        console.warn('⚠️ User already exists:', email)
+        throw new AppError('User with this email already exists. Please login instead.', 409)
+      }
+    } catch (error: any) {
+      if (error instanceof AppError) throw error
+      console.error('❌ Database error checking user:', error)
+      throw new AppError('Database error. Please try again.', 500)
     }
     
-    const user = new User({
-      fullName,
-      email,
-      phone,
-      password,
-      accountStatus: 'pending_verification',
-      isEmailVerified: false,
-      isPhoneVerified: false,
-      verificationScore: 0,
-      identityVerified: false
-    })
+    // ✅ Create user
+    let user
+    try {
+      user = new User({
+        fullName: fullName.trim(),
+        email: email.toLowerCase().trim(),
+        phone: phone.trim(),
+        password: password,
+        accountStatus: 'pending_verification',
+        isEmailVerified: false,
+        isPhoneVerified: false,
+        verificationScore: 0,
+        identityVerified: false
+      })
+      
+      await user.save()
+      console.log(`✅ User saved successfully: ${user.email} (ID: ${user._id})`)
+      logger.info(`✅ User registered: ${user.email} (ID: ${user._id})`)
+    } catch (error: any) {
+      console.error('❌ Error saving user:', error)
+      if (error.code === 11000) {
+        throw new AppError('Email already registered. Please login.', 409)
+      }
+      throw new AppError('Failed to create account. Please try again.', 500)
+    }
     
-    await user.save()
-    logger.info(`✅ User registered: ${user.email} (ID: ${user._id})`)
+    // ✅ Generate tokens
+    let accessToken: string, refreshToken: string
+    try {
+      const tokens = JWTService.generateTokens(user._id.toString())
+      accessToken = tokens.accessToken
+      refreshToken = tokens.refreshToken
+      console.log('✅ Tokens generated successfully')
+    } catch (error) {
+      console.error('❌ Error generating tokens:', error)
+      throw new AppError('Failed to generate authentication tokens', 500)
+    }
     
-    const { accessToken, refreshToken } = JWTService.generateTokens(user._id.toString())
+    // ✅ Create session
+    try {
+      const session = new Session({
+        user: user._id,
+        token: accessToken,
+        refreshToken: refreshToken,
+        device: {
+          type: req.headers['user-agent'] || 'Unknown',
+          os: 'Unknown',
+          browser: 'Unknown'
+        },
+        ipAddress: req.ip || req.socket.remoteAddress || 'Unknown',
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      })
+      await session.save()
+      console.log('✅ Session created successfully')
+    } catch (error) {
+      console.error('❌ Error creating session:', error)
+      // Continue even if session fails - user can still login
+    }
     
-    const session = new Session({
-      user: user._id,
-      token: accessToken,
-      refreshToken,
-      device: {
-        type: req.headers['user-agent'] || 'Unknown',
-        os: 'Unknown',
-        browser: 'Unknown'
-      },
-      ipAddress: req.ip || req.socket.remoteAddress || 'Unknown',
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-    })
-    await session.save()
-    
+    // ✅ Send OTP
     try {
       const otpCode = crypto.randomInt(100000, 999999).toString()
+      console.log(`📧 Generated OTP: ${otpCode} for ${user.email}`)
+      
       const otp = new OTP({
         email: user.email,
         code: otpCode,
@@ -61,14 +111,23 @@ export class AuthController {
         expiresAt: new Date(Date.now() + 15 * 60 * 1000)
       })
       await otp.save()
+      console.log('✅ OTP saved to database')
+      
       await emailService.sendVerificationOTP(user.email, otpCode)
+      console.log(`📧 OTP email sent to ${user.email}`)
       logger.info(`📧 OTP sent to ${user.email}`)
     } catch (error) {
+      console.error('❌ Failed to send OTP:', error)
       logger.error('Failed to send OTP:', error)
+      // Continue registration even if OTP fails - user can request OTP again
     }
+    
+    // ✅ Success response
+    console.log('✅ Registration complete for:', user.email)
     
     res.status(201).json({
       success: true,
+      message: 'Account created successfully. Please verify your email.',
       data: {
         user: {
           id: user._id,
@@ -86,67 +145,101 @@ export class AuthController {
   }
   
   static async login(req: Request, res: Response) {
+    console.log('🔐 ===== LOGIN REQUEST =====')
+    console.log('🔐 Login for:', req.body.email)
+    
     const { email, password } = req.body
     
-    const user = await User.findOne({ email }).select('+password')
-    if (!user) {
-      throw new AppError('Invalid credentials', 401)
+    if (!email || !password) {
+      console.error('❌ Missing email or password')
+      throw new AppError('Email and password are required', 400)
     }
     
-    const isPasswordValid = await user.comparePassword(password)
-    if (!isPasswordValid) {
-      throw new AppError('Invalid credentials', 401)
-    }
-    
-    if (!user.isActive) {
-      throw new AppError('Account is inactive', 403)
-    }
-    
-    user.lastLogin = new Date()
-    await user.save()
-    
-    const { accessToken, refreshToken } = JWTService.generateTokens(user._id.toString())
-    
-    const session = new Session({
-      user: user._id,
-      token: accessToken,
-      refreshToken,
-      device: {
-        type: req.headers['user-agent'] || 'Unknown',
-        os: 'Unknown',
-        browser: 'Unknown'
-      },
-      ipAddress: req.ip || req.socket.remoteAddress || 'Unknown',
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-    })
-    await session.save()
-    
-    res.json({
-      success: true,
-      data: {
-        user: {
-          id: user._id,
-          fullName: user.fullName,
-          email: user.email,
-          phone: user.phone,
-          identityVerified: user.identityVerified,
-          isEmailVerified: user.isEmailVerified,
-          accountStatus: user.accountStatus,
-          preferences: user.preferences,
-          privacy: user.privacy,
-          twoFactorEnabled: user.twoFactorEnabled
-        },
-        accessToken,
-        refreshToken
+    try {
+      const user = await User.findOne({ email: email.toLowerCase().trim() }).select('+password')
+      if (!user) {
+        console.warn('⚠️ User not found:', email)
+        throw new AppError('Invalid credentials', 401)
       }
-    })
+      
+      console.log('✅ User found:', user.email)
+      
+      const isPasswordValid = await user.comparePassword(password)
+      if (!isPasswordValid) {
+        console.warn('⚠️ Invalid password for:', email)
+        throw new AppError('Invalid credentials', 401)
+      }
+      
+      console.log('✅ Password valid')
+      
+      if (!user.isActive) {
+        console.warn('⚠️ Account inactive:', email)
+        throw new AppError('Account is inactive. Please contact support.', 403)
+      }
+      
+      // Update last login
+      user.lastLogin = new Date()
+      await user.save()
+      
+      // Generate tokens
+      const { accessToken, refreshToken } = JWTService.generateTokens(user._id.toString())
+      console.log('✅ Tokens generated')
+      
+      // Create session
+      const session = new Session({
+        user: user._id,
+        token: accessToken,
+        refreshToken,
+        device: {
+          type: req.headers['user-agent'] || 'Unknown',
+          os: 'Unknown',
+          browser: 'Unknown'
+        },
+        ipAddress: req.ip || req.socket.remoteAddress || 'Unknown',
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      })
+      await session.save()
+      console.log('✅ Session created')
+      
+      console.log('✅ Login complete for:', user.email)
+      
+      res.json({
+        success: true,
+        data: {
+          user: {
+            id: user._id,
+            fullName: user.fullName,
+            email: user.email,
+            phone: user.phone,
+            identityVerified: user.identityVerified,
+            isEmailVerified: user.isEmailVerified,
+            accountStatus: user.accountStatus,
+            preferences: user.preferences,
+            privacy: user.privacy,
+            twoFactorEnabled: user.twoFactorEnabled
+          },
+          accessToken,
+          refreshToken
+        }
+      })
+    } catch (error: any) {
+      console.error('❌ Login error:', error)
+      if (error instanceof AppError) throw error
+      throw new AppError('Login failed. Please try again.', 500)
+    }
   }
   
   static async logout(req: any, res: Response) {
-    const { session } = req
-    if (session) {
-      session.isActive = false
-      await session.save()
+    console.log('🚪 Logout request')
+    try {
+      const { session } = req
+      if (session) {
+        session.isActive = false
+        await session.save()
+        console.log('✅ Session deactivated')
+      }
+    } catch (error) {
+      console.error('❌ Logout error:', error)
     }
     res.json({
       success: true,
@@ -155,8 +248,11 @@ export class AuthController {
   }
   
   static async refreshToken(req: Request, res: Response) {
+    console.log('🔄 Refresh token request')
     const { refreshToken } = req.body
+    
     if (!refreshToken) {
+      console.error('❌ No refresh token provided')
       throw new AppError('Refresh token required', 400)
     }
     
@@ -173,11 +269,13 @@ export class AuthController {
       })
       
       if (!session) {
+        console.warn('⚠️ Invalid refresh token')
         throw new AppError('Invalid refresh token', 401)
       }
       
       const user = await User.findById(decoded.userId)
       if (!user || !user.isActive) {
+        console.warn('⚠️ User not found or inactive')
         throw new AppError('User not found', 401)
       }
       
@@ -189,6 +287,8 @@ export class AuthController {
       session.refreshToken = newRefreshToken
       await session.save()
       
+      console.log('✅ Token refreshed for:', user.email)
+      
       res.json({
         success: true,
         data: {
@@ -196,69 +296,124 @@ export class AuthController {
           refreshToken: newRefreshToken
         }
       })
-    } catch (error) {
+    } catch (error: any) {
+      console.error('❌ Refresh token error:', error)
       throw new AppError('Invalid refresh token', 401)
     }
   }
   
   static async getProfile(req: any, res: Response) {
-    const user = await User.findById(req.user._id)
-    res.json({
-      success: true,
-      data: user
-    })
+    console.log('👤 Get profile request')
+    try {
+      const user = await User.findById(req.user._id)
+      if (!user) {
+        console.warn('⚠️ User not found:', req.user._id)
+        throw new AppError('User not found', 404)
+      }
+      console.log('✅ Profile retrieved for:', user.email)
+      res.json({
+        success: true,
+        data: user
+      })
+    } catch (error: any) {
+      console.error('❌ Get profile error:', error)
+      if (error instanceof AppError) throw error
+      throw new AppError('Failed to get profile', 500)
+    }
   }
   
   static async updateProfile(req: any, res: Response) {
+    console.log('📝 Update profile request')
     const updates = req.body
-    const user = await User.findById(req.user._id)
-    if (!user) {
-      throw new AppError('User not found', 404)
-    }
-    const allowedFields = ['fullName', 'phone', 'bio', 'preferences', 'privacy']
-    allowedFields.forEach(field => {
-      if (updates[field] !== undefined) {
-        (user as any)[field] = updates[field]
+    try {
+      const user = await User.findById(req.user._id)
+      if (!user) {
+        console.warn('⚠️ User not found:', req.user._id)
+        throw new AppError('User not found', 404)
       }
-    })
-    await user.save()
-    res.json({
-      success: true,
-      data: user
-    })
+      
+      const allowedFields = ['fullName', 'phone', 'bio', 'preferences', 'privacy', 'profileImage']
+      allowedFields.forEach(field => {
+        if (updates[field] !== undefined) {
+          (user as any)[field] = updates[field]
+        }
+      })
+      
+      await user.save()
+      console.log('✅ Profile updated for:', user.email)
+      
+      res.json({
+        success: true,
+        data: user
+      })
+    } catch (error: any) {
+      console.error('❌ Update profile error:', error)
+      if (error instanceof AppError) throw error
+      throw new AppError('Failed to update profile', 500)
+    }
   }
   
   static async changePassword(req: any, res: Response) {
+    console.log('🔑 Change password request')
     const { currentPassword, newPassword } = req.body
-    const user = await User.findById(req.user._id).select('+password')
-    if (!user) {
-      throw new AppError('User not found', 404)
+    
+    try {
+      const user = await User.findById(req.user._id).select('+password')
+      if (!user) {
+        console.warn('⚠️ User not found:', req.user._id)
+        throw new AppError('User not found', 404)
+      }
+      
+      const isPasswordValid = await user.comparePassword(currentPassword)
+      if (!isPasswordValid) {
+        console.warn('⚠️ Invalid current password')
+        throw new AppError('Current password is incorrect', 401)
+      }
+      
+      user.password = newPassword
+      await user.save()
+      console.log('✅ Password changed for:', user.email)
+      
+      res.json({
+        success: true,
+        message: 'Password changed successfully'
+      })
+    } catch (error: any) {
+      console.error('❌ Change password error:', error)
+      if (error instanceof AppError) throw error
+      throw new AppError('Failed to change password', 500)
     }
-    const isPasswordValid = await user.comparePassword(currentPassword)
-    if (!isPasswordValid) {
-      throw new AppError('Current password is incorrect', 401)
-    }
-    user.password = newPassword
-    await user.save()
-    res.json({
-      success: true,
-      message: 'Password changed successfully'
-    })
   }
   
   static async forgotPassword(req: Request, res: Response) {
+    console.log('📧 Forgot password request for:', req.body.email)
     const { email } = req.body
-    const user = await User.findOne({ email })
-    if (!user) {
-      throw new AppError('User not found', 404)
+    
+    try {
+      const user = await User.findOne({ email: email.toLowerCase().trim() })
+      if (!user) {
+        console.warn('⚠️ User not found:', email)
+        // Don't reveal that user doesn't exist for security
+        return res.json({
+          success: true,
+          message: 'If an account exists, a password reset link has been sent to your email'
+        })
+      }
+      
+      const resetToken = crypto.randomBytes(32).toString('hex')
+      const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`
+      
+      await emailService.sendPasswordResetOTP(email, resetToken)
+      console.log('✅ Password reset email sent to:', email)
+      
+      res.json({
+        success: true,
+        message: 'Password reset link sent to your email'
+      })
+    } catch (error) {
+      console.error('❌ Forgot password error:', error)
+      throw new AppError('Failed to send password reset email', 500)
     }
-    const resetToken = crypto.randomBytes(32).toString('hex')
-    const resetLink = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`
-    await emailService.sendPasswordResetOTP(email, resetToken)
-    res.json({
-      success: true,
-      message: 'Password reset link sent to your email'
-    })
   }
 }
 
