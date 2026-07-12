@@ -8,10 +8,12 @@ import { registerValidation, loginValidation, changePasswordValidation } from '.
 
 const router = Router()
 
-// ✅ Add a test route to verify the router is mounted
 router.get('/test', (req, res) => {
   res.json({ message: 'Auth router is working!' })
 })
+
+// ✅ DEBUG: Bypass all middleware
+router.post('/register-debug', authController.register)
 
 router.post('/register', rateLimiter.auth, validate(registerValidation), authController.register)
 router.post('/login', rateLimiter.auth, validate(loginValidation), authController.login)
