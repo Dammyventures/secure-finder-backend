@@ -28,31 +28,26 @@ const server = createServer(app)
 const io = initSocket(server)
 
 // ============================================
-// DATABASE CONNECTIONS WITH ERROR HANDLING
+// DATABASE CONNECTIONS
 // ============================================
 
-// Connect to MongoDB with error handling
 const connectDB = async () => {
   try {
     await connectDatabase()
     logger.info('✅ MongoDB connected successfully')
   } catch (error) {
     logger.error('❌ MongoDB connection failed:', error)
-    // Don't exit - let the app try to reconnect
   }
 }
 
-// Connect to Redis with error handling (optional)
 const connectRedisClient = async () => {
   try {
     await connectRedis()
-    // The function handles its own logging
   } catch (error) {
     logger.warn('⚠️ Redis connection failed - running without Redis:', error)
   }
 }
 
-// Initialize connections
 connectDB()
 connectRedisClient()
 
@@ -60,33 +55,36 @@ connectRedisClient()
 // CORS CONFIGURATION - FIXED
 // ============================================
 
+// ✅ Explicitly list all allowed origins (including production frontend)
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
   'http://localhost:5000',
-  'https://secure-finder.vercel.app',
-  'https://secure-finder.vercel.app/',
+  'https://secure-finder.vercel.app',          // <-- Your production frontend
   process.env.FRONTEND_URL,
   process.env.FRONTEND_URL_PROD
-].filter(Boolean) // Remove any undefined values
+].filter(Boolean) as string[]
+
+// Log the allowed origins for debugging
+console.log('✅ Allowed CORS origins:', allowedOrigins)
 
 const corsOptions = {
   origin: function (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) {
-    // Allow requests with no origin (like mobile apps or curl requests)
+    // Allow requests with no origin (mobile apps, curl, etc.)
     if (!origin) {
       return callback(null, true)
     }
-    
-    // In development, allow all
+
+    // In development, allow all for easier testing
     if (process.env.NODE_ENV === 'development') {
       return callback(null, true)
     }
-    
-    // Check if origin is allowed
+
+    // Check if origin is in the allowed list
     if (allowedOrigins.includes(origin)) {
       callback(null, true)
     } else {
-      logger.warn(`❌ CORS blocked origin: ${origin}`)
+      console.warn(`❌ CORS blocked origin: ${origin}`)
       callback(new Error('Not allowed by CORS'))
     }
   },
@@ -98,30 +96,28 @@ const corsOptions = {
 }
 
 // ============================================
-// MIDDLEWARE - ORDER MATTERS!
+// MIDDLEWARE
 // ============================================
 
-// Security middleware
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
   crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }
 }))
 
-// CORS middleware - MUST come before routes
+// ✅ CORS middleware must come before any routes
 app.use(cors(corsOptions))
 
-// Body parsing middleware
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
-// Request logging middleware
+// Request logging
 app.use((req, res, next) => {
   logger.info(`${req.method} ${req.url} - Origin: ${req.headers.origin || 'unknown'}`)
   next()
 })
 
 // ============================================
-// HEALTH CHECK ENDPOINT - Enhanced
+// HEALTH CHECK - Enhanced
 // ============================================
 
 app.get('/health', (_req, res) => {
@@ -164,7 +160,7 @@ app.get('/', (_req, res) => {
 })
 
 // ============================================
-// TEST ENDPOINT - For debugging
+// TEST ENDPOINT (for debugging)
 // ============================================
 
 app.get('/test', (_req, res) => {
@@ -183,11 +179,9 @@ app.get('/test', (_req, res) => {
 // ROUTES
 // ============================================
 
-// Public routes (no authentication required)
 app.use('/api/auth/verification', verificationRoutes)
 app.use('/api/otp', otpRoutes)
 
-// Protected routes with rate limiting
 app.use('/api/auth', rateLimiter.auth, authRoutes)
 app.use('/api/items', rateLimiter.api, itemRoutes)
 app.use('/api/claims', rateLimiter.api, claimRoutes)
@@ -196,17 +190,14 @@ app.use('/api/users', rateLimiter.api, userRoutes)
 app.use('/api/admin', rateLimiter.api, adminRoutes)
 
 // ============================================
-// SOCKET.IO HANDLING
+// SOCKET.IO
 // ============================================
 
 io.on('connection', (socket) => {
   logger.info(`User connected: ${socket.id}`)
-  
   socket.on('authenticate', (token) => {
-    // Authentication handled elsewhere
     logger.info(`Socket authenticated: ${socket.id}`)
   })
-  
   socket.on('disconnect', () => {
     logger.info(`User disconnected: ${socket.id}`)
   })
@@ -224,13 +215,13 @@ app.use((req, res) => {
 })
 
 // ============================================
-// ERROR HANDLING MIDDLEWARE
+// ERROR HANDLER
 // ============================================
 
 app.use(errorHandler)
 
 // ============================================
-// SERVER STARTUP
+// START SERVER
 // ============================================
 
 const PORT = process.env.PORT || 5000
@@ -252,7 +243,6 @@ process.on('SIGTERM', () => {
   logger.info('SIGTERM signal received: closing HTTP server')
   serverInstance.close(() => {
     logger.info('HTTP server closed')
-    // Close database connections
     mongoose.connection.close().then(() => {
       logger.info('MongoDB connection closed')
       process.exit(0)
@@ -271,18 +261,13 @@ process.on('SIGINT', () => {
   })
 })
 
-// ============================================
-// UNHANDLED EXCEPTION HANDLING
-// ============================================
-
+// Unhandled errors
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception:', error)
-  // Keep the process running
 })
 
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection at:', promise, 'reason:', reason)
-  // Keep the process running
 })
 
 export default app
