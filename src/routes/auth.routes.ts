@@ -1,3 +1,4 @@
+// routes/auth.routes.ts
 import { Router } from 'express'
 import { authController } from '../controllers/auth.controller'
 import { authenticate } from '../middleware/auth.middleware'
@@ -6,6 +7,11 @@ import { rateLimiter } from '../middleware/rateLimit.middleware'
 import { registerValidation, loginValidation, changePasswordValidation } from '../utils/validators'
 
 const router = Router()
+
+// ✅ Add a test route to verify the router is mounted
+router.get('/test', (req, res) => {
+  res.json({ message: 'Auth router is working!' })
+})
 
 router.post('/register', rateLimiter.auth, validate(registerValidation), authController.register)
 router.post('/login', rateLimiter.auth, validate(loginValidation), authController.login)
