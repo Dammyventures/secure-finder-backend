@@ -14,23 +14,23 @@ export class EmailService {
   constructor() {
     // Log configuration (hide sensitive parts)
     console.log('📧 Email Service initialized with:')
-    console.log(`  Host: ${process.env.SMTP_HOST || 'smtp.gmail.com'}`)
+    console.log(`  Host: ${process.env.SMTP_HOST || 'smtp-relay.brevo.com'}`)
     console.log(`  Port: ${process.env.SMTP_PORT || '587'}`)
     console.log(`  User: ${process.env.SMTP_USER ? '✅ Set' : '❌ Missing'}`)
     console.log(`  Pass: ${process.env.SMTP_PASS ? '✅ Set' : '❌ Missing'}`)
     console.log(`  From: ${process.env.EMAIL_FROM || 'noreply@securefinder.com'}`)
 
     this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      host: process.env.SMTP_HOST || 'smtp-relay.brevo.com',
       port: parseInt(process.env.SMTP_PORT || '587'),
       secure: process.env.SMTP_PORT === '465',
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS
       },
-      // Add timeout and debug options
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
+      // Timeouts to avoid hanging
+      connectionTimeout: 5000,
+      greetingTimeout: 5000,
       socketTimeout: 10000,
     })
   }
@@ -44,7 +44,6 @@ export class EmailService {
       logger.info(`✅ Email sent to ${options.to}`)
       return result
     } catch (error: any) {
-      // Log detailed error
       console.error('❌ Email sending failed:', error)
       console.error('Error name:', error.name)
       console.error('Error message:', error.message)
