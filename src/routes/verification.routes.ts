@@ -5,7 +5,6 @@ import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
 
-// Ensure uploads directory exists
 const uploadDir = path.join(process.cwd(), 'uploads')
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true })
@@ -24,9 +23,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB
-  },
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
     if (allowedTypes.includes(file.mimetype)) {
@@ -39,13 +36,10 @@ const upload = multer({
 
 const router = Router()
 
-// All routes require authentication
 router.use(authenticate)
 
-// Start verification
 router.post('/start', VerificationController.startVerification)
 
-// Upload documents
 router.post(
   '/:id/upload',
   upload.fields([
@@ -56,7 +50,9 @@ router.post(
   VerificationController.uploadDocuments
 )
 
-// Get verification status
 router.get('/:id', VerificationController.getVerificationStatus)
+
+// ✅ NEW: Complete verification
+router.post('/:id/complete', VerificationController.completeVerification)
 
 export default router

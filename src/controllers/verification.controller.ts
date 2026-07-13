@@ -107,6 +107,7 @@ export class VerificationController {
 
       const user = await User.findById(userId)
       
+      // If user already verified, sync verification status
       if (user && user.identityVerified) {
         verification.status = 'verified'
         verification.score = 100
@@ -117,6 +118,50 @@ export class VerificationController {
     } catch (error: any) {
       logger.error('Get verification status error:', error)
       throw new AppError(error.message || 'Failed to get verification status', 500)
+    }
+  }
+
+  // ✅ NEW: Complete verification and update user
+  static async completeVerification(req: any, res: Response) {
+    try {
+      const { id } = req.params
+      const userId = req.user._id
+
+      const verification = await Verification.findOne({ _id: id, userId })
+      if (!verification) {
+        throw new AppError('Verification not found', 404)
+      }
+
+      if (verification.status === 'verified') {
+        throw new AppError('Already verified', 400)
+      }
+
+      // Update verification
+      verification.status = 'verified'
+      verification.score = 100
+      verification.processedAt = new Date()
+      await verification.save()
+
+      // ✅ Update user
+      const user = await User.findById(userId)
+      if (user) {
+        user.identityVerified = true
+        user.verificationScore = 100
+        if (user.accountStatus === 'pending_verification') {
+          user.accountStatus = 'active'
+        }
+        await user.save()
+        logger.info(`User ${userId} marked as verified`)
+      }
+
+      return res.json({
+        success: true,
+        data: verification,
+        userUpdated: true
+      })
+    } catch (error: any) {
+      logger.error('Complete verification error:', error)
+      throw new AppError(error.message || 'Failed to complete verification', 500)
     }
   }
 }
